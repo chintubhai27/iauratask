@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template deploys a VPC, public & private subnets, AZs, IGW, NAT gateway and default routes for both of them.
+
+Parameters:
+  EnvironmentName:
+    Description: An environment name that will be the prefixed of resource names 
+    Type: String 
+  
+  VpcCIDR:
+    Description: Enter the IP range for this VPC 
+    Type: String 
+    Default: 172.16.0.0/16
+
+  PublicSubnet1CIDR: 
+    Description: Enter the Ip range for public Subnet
+    Type: String 
+    Default: 172.16.10.0/16
+
+  PrivateSubnet1CIDR:
+    Description: enter the Ip range for the private subnet 
+    Type: String 
+    Default: 172.16.20.0/16
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC 
+    Properties:
+      CidrBlock: !Ref VpcCIDR 
+      EnableDnsSupport: true 
+      EnableDnsHostnames: true 
+      Tags:
+        - Key: Name 
+          Value: !Ref EnvironmentName 
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway 
+    Properties:
+      Tags:
+        - Key: Name 
+          Value: !Sub '${EnvironmentName} InternetGateway' 
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatweayAttachment 
+    Properties: 
+      InternetGatewayID: !Ref InternetGateway
+      VpcId: !Ref VPC 
+
+  PublicSubnet1: 
+    Type: AWS::EC2::Subnet 
+    Properties: 
+      VpcId: !Ref VPC 
+      AvailabilityZone: !Select [ 0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnlaunch: True 
+      Tags: 
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ)
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet 
+    Properties:
+      VpcId: !Ref VPC 
+      AvailabilityZone: !Select [ 0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: False 
+      Tags:
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ) 
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable 
+    Properties:
+      VpcId: !Ref VPC 
+      Tags:
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Public Route 
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route 
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable 
+    Properties: 
+      VpcID: !Ref VPC 
+      Tags:
+        - Key: Name 
+          Value: !Sub ${EnvironmentName} Private Routes (AZ) 
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation 
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+
+  NAT:
+    Type: AWS:EC2::NatGateway 
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIP 
+        - AllocationId 
+      SubnetId: !Ref PublicSubnet1
+
+
+  EIP:
+    DependsOn: InternetGatewayAttachment
+    Type: AWS::EC2::EIP 
+    Properties:
+      Domain: vpc 
+
+  Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0 
+      NatGatewayId: !Ref NAT 
+
+  NoIngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: "no-ingress-sg"
+      GroupDescription: "Security group with no ingress rule"
+      VpcId: !Ref VPC
+
+  Outputs:
+   VPC:
+    Description: A reference to the created VPC
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC'
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet1'
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnet1'
+
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PublicSubnet1
+    
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !Ref PrivateSubnet1
+    
+  NoIngressSecurityGroup:
+    Description: Security group with no ingress rule
+    Value: !Ref NoIngressSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-NoIngressSecurityGroup'
+  NAT:
+    Description: A Reference to create a NAT Gateway
+    Value: !Ref NAT
+    Export:
+     Name: !Sub '${AWS::StackName}-NAT'
+  EIP:
+    Description: A Reference to create a EIP 
+    Value: !Ref EIP 
+    Export:
+     Name: !Sub '${AWS::StackName}-EIP'
+  Route: 
+    Description: A Reference to create a Route for NAT Gateway
+    Value: !Ref Route
+    Export:
+     Name: !Sub '${AWS::StackName}-Route'
